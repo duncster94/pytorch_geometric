@@ -10,13 +10,10 @@ from ..inits import glorot, zeros
 class GATConv(MessagePassing):
     r"""The graph attentional operator from the `"Graph Attention Networks"
     <https://arxiv.org/abs/1710.10903>`_ paper
-
     .. math::
         \mathbf{x}^{\prime}_i = \alpha_{i,i}\mathbf{\Theta}\mathbf{x}_{i} +
         \sum_{j \in \mathcal{N}(i)} \alpha_{i,j}\mathbf{\Theta}\mathbf{x}_{j},
-
     where the attention coefficients :math:`\alpha_{i,j}` are computed as
-
     .. math::
         \alpha_{i,j} =
         \frac{
@@ -27,7 +24,6 @@ class GATConv(MessagePassing):
         \exp\left(\mathrm{LeakyReLU}\left(\mathbf{a}^{\top}
         [\mathbf{\Theta}\mathbf{x}_i \, \Vert \, \mathbf{\Theta}\mathbf{x}_k]
         \right)\right)}.
-
     Args:
         in_channels (int): Size of each input sample.
         out_channels (int): Size of each output sample.
@@ -76,7 +72,7 @@ class GATConv(MessagePassing):
         glorot(self.att)
         zeros(self.bias)
 
-    def forward(self, x, edge_index, size=None):
+    def forward(self, x, edge_index, edge_attr, size=None):
         """"""
         if size is None and torch.is_tensor(x):
             edge_index, _ = remove_self_loops(edge_index)
@@ -88,9 +84,9 @@ class GATConv(MessagePassing):
             x = (None if x[0] is None else torch.matmul(x[0], self.weight),
                  None if x[1] is None else torch.matmul(x[1], self.weight))
 
-        return self.propagate(edge_index, size=size, x=x)
+        return self.propagate(edge_index, edge_attr, size=size, x=x)
 
-    def message(self, edge_index_i, x_i, x_j, size_i):
+    def message(self, edge_index_i, x_i, x_j, size_i, edge_attr):
         # Compute attention coefficients.
         x_j = x_j.view(-1, self.heads, self.out_channels)
         if x_i is None:
@@ -100,7 +96,7 @@ class GATConv(MessagePassing):
             alpha = (torch.cat([x_i, x_j], dim=-1) * self.att).sum(dim=-1)
 
         alpha = F.leaky_relu(alpha, self.negative_slope)
-        alpha = softmax(alpha, edge_index_i, size_i)
+        alpha = softmax(alpha, edge_index_i, edge_attr, size_i)
 
         # Sample attention coefficients stochastically.
         alpha = F.dropout(alpha, p=self.dropout, training=self.training)
